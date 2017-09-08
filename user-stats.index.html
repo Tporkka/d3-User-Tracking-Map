@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<title>Interactive User Stats Map</title>
+<h1 class = "Header" x=100 y=100> Where are our<span> Users </span>?</h1>
+
+<style>
+/* - - nation & header styling - - */
+.land {
+  fill: #ddd;
+}
+.Header {
+  font: 20px sans-serif;
+  position: absolute;
+  left: 240px;
+  top: 70px;
+}
+.Header span {
+  font: 35px sans-serif;
+  font-style: italic;
+  color: #000080;
+}
+.land:hover {
+  fill:green;
+}
+.active {
+  fill: #000080;
+}
+.border {
+  fill: none;
+  stroke: green;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+#nation {
+  width: %100;
+  float: left;
+  position: relative;
+  left: 55px;
+  top: 100px;
+}
+
+/* - - state (to right of nation map) styling - - */
+.selectState {
+  fill: none;
+  stroke: black;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+#state {
+  float: left;
+  position: relative;
+  left:40px;
+  top: 75px;
+}
+.statsText {
+  text-anchor: left;
+  font-family: sans-serif;
+  font-size: 12px;
+  font-weight: bold;
+  fill: black;
+}
+.preHeader {
+  text-anchor: left;
+  font-family: sans-serif;
+  font-size: 18px;
+  font-weight: normal;
+  fill: black;
+}
+
+/* - - scatterplot styling - - */
+body {
+  font-size: 12px;
+  font-family: sans-serif;
+  font-weight: bold;
+}
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+.scatterPlot {
+  position: absolute;
+  left: -20px;
+  top: 270px;
+}
+</style>
+
+<!-- divide the page into two parts: One for the nation and one for the state statistics. -->
+<div id="nation"></div>
+<div id="state"></div>
+
+<body>
+<script src="//d3js.org/d3.v3.min.js" charset="utf-8"></script>
+<script src="//d3js.org/topojson.v1.min.js"></script>
+<script>
+
+/* - - map variables - - */
+
+var width = 600,//remember to change the makefile to correspond to changing svg size.
+    height = 375,
+    stateContainerWidth = 650,
+    stateContainerHeight = 400,
+    active = d3.select(null);
+
+var projection = d3.geo.albersUsa()
+    .scale(800)
+    .translate([width/2, height/2]);
+
+var path = d3.geo.path()
+    .projection(null);//null since path has already been projected in the makefile.
+
+var nationContainer = d3.select('#nation').append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+var stateContainer = d3.select('#state').append("svg")
+    .attr("width", stateContainerWidth)
+    .attr("height", stateContainerHeight);//change to make dynamically adapt to state's size.
+
+var g = nationContainer.append("g"),
+    g2 = stateContainer.append("g");
+
+var counties,
+    county_data,
+    maxUsers,
+    radius;
+
+/* - - scatterplot variables - - */
+
+var scatter_margin = {top: 0, right: 20, bottom: 30, left: 40},
+    scatter_width = 350,
+    scatter_height = 130,
+    scatter_padding = 10;
+
+var xScale = d3.time.scale()
+         .rangeRound([scatter_padding, scatter_width - scatter_padding * 2]);
+
+var yScale = d3.scale.linear()
+              .range([scatter_height - scatter_padding, scatter_padding]);
+
+var xAxis = d3.svg.axis()
+ .scale(xScale)
+ .ticks(6)
+ //.tickFormat(d3.time.format("%b-%Y"))//uncomment to show month label
+ .tickFormat(d3.time.format("%Y"))
+ .orient("bottom");
+
+var yAxis = d3.svg.axis()
+   .scale(yScale)
+   .ticks(5)
+   .orient("left");
+
+var scatter_svg = d3.select("#state").append("svg")
+  .attr("class", "scatterPlot")
+  .attr("id", "scatter")
+  .attr("width", scatter_width + scatter_margin.left + scatter_margin.right)
+  .attr("height", scatter_height + scatter_margin.top + scatter_margin.bottom)
+  .append("g")
+  .attr("transform", "translate(" + scatter_margin.left + "," + scatter_margin.top + ")");
+
+/* - - load data, create map, and bind user data - - */
+//load json data
+d3.json("us.json", function(error, us) {
+  if (error) return console.log(error);
+
+  counties = topojson.feature(us, us.objects.counties).features;
+  county_data = counties.filter(function(d) {return d.properties.total_users > 0; });
+  //I prefiltered for this when creating the data so not really needed here.
+  maxUsers = d3.max(county_data, function(d) { return d.properties.total_users; });
+
+  radius = d3.scale.sqrt()
+    .domain([0, maxUsers])
+    .range([0, 5]);
+
+  //create a US map
+  g.selectAll("path")
+    .data(topojson.feature(us, us.objects.states).features)
+    .enter().append("path")
+    .attr("class", "land")
+    .attr("d", path)
+    .on("click", clicked);
+
+  //add state borders
+  g.append("path")
+    .datum(topojson.mesh(us, us.objects.states, function(a, b) { return a !== b; }))
+    .attr("class", "border")
+    .attr("d", path);
+
+  //add bubbles where users are located
+  g.selectAll("circle")
+    .attr("class", "bubble")
+    .data(county_data)
+    .enter().append("circle")
+    .attr("id", "county")
+    .attr("pointer-events", "none")
+    .attr("title", function(d) {return d.properties.name; })
+    .attr("r", function(d) {
+      return radius(d.properties.total_users) * 1.5; })
+    .attr("fill", "green")
+    .attr("fill-opacity", ".5")
+    .attr("transform", function(d) { return "translate(" + projection([+d.properties.Lon, +d.properties.Lat]) + ")" ; });
+});
+
+/* - - create a new state next to the US map - - */
+function clicked(state) {
+  if (active.node() === this) return reset();
+  active.classed("active", false);
+  active = d3.select(this).classed("active", true)
+
+  //erase previously selected svg data.
+  stateContainer.selectAll("path").remove();
+  stateContainer.selectAll("circle").remove();
+  stateContainer.selectAll("text").remove();
+  d3.select("#tooltip").remove();
+
+  //position state within the state container.
+  var bounds = path.bounds(state),
+      centerX = 92,
+      centerY = 195,
+      centroid = path.centroid(state),
+      dx = bounds[1][0] - bounds[0][0],
+      dy = bounds[1][1] - bounds[0][1],
+      x = (bounds[0][0] + bounds[1][0]) / 2,
+      y = (bounds[0][1] + bounds[1][1]) / 2,
+      scale = Math.max(1, Math.min(6, .3 / Math.max(dx / width, dy / height))),
+      translate = [centerX - scale * x, centerY - scale * y];
+
+  var selectedStateData = county_data.filter(function(d){return d.id === state.id; });
+
+  //draw selected state
+  g2.append("path")
+    .datum(state)
+    .attr("class", "selectState")
+    .attr("id", function(d){ return d.id; })
+    .attr("vector-effect", "non-scaling-stroke")
+    .attr("d", path);
+
+  //append bubbles where users are in selected state.
+  g2.selectAll("circle")
+    .data(county_data.filter(function(d){ return d.id === state.id; }))
+    .enter().append("circle")
+    .attr("id", "county")
+    .attr("title", function(d) {return d.properties.county_name + " County"; })
+    .attr("r", function(d) {
+      return radius(d.properties.total_users) * 2 + "px"; })
+    .attr("fill", "green")
+    .attr("fill-opacity", ".5")
+    .on("mouseover", function() { d3.select(this).attr("fill", "black");  })
+    .on("mouseout", function() { d3.select(this).attr("fill", "green"); })
+    .attr("transform", function(d) {
+      return "translate(" + projection([+d.properties.Lon, +d.properties.Lat])+ ")scale(" + 1/scale + ")"; });
+
+  //rotate state as a function of how far from the center.
+  var rotation_factor = (x - (width/2))/(width/2) * 12; //max rotation = 10 degrees
+  console.log("rotation: " + rotation_factor);
+
+  g2.attr("transform", "translate(" + translate + ") scale(" + scale + ") rotate(" + rotation_factor + " " + centroid[0] + " " + centroid[1] + ")");
+
+  /* - - add labels for state statistics. - - */
+  var countiesPerState = selectedStateData.length,
+      stateUsers2011 = d3.sum(selectedStateData, function(d) { return d.properties.Jan_2011; }),
+      stateUsers2012 = d3.sum(selectedStateData, function(d) { return d.properties.Jan_2012; }),
+      stateUsers2013 = d3.sum(selectedStateData, function(d) { return d.properties.Jan_2013; }),
+      stateUsers2014 = d3.sum(selectedStateData, function(d) { return d.properties.Jan_2014; }),
+      stateUsers2015 = d3.sum(selectedStateData, function(d) { return d.properties.Jan_2015; }),
+      stateUsers2016 = d3.sum(selectedStateData, function(d) { return d.properties.Jan_2016; }),
+      stateUsers2017 = d3.sum(selectedStateData, function(d) { return d.properties.Jan_2017; }),
+      stateUsersTime = [{'date': '02-Jan-2011', 'users': stateUsers2011}, {'date': '02-Jan-2012', 'users': stateUsers2012},
+                        {'date': '02-Jan-2013', 'users': stateUsers2013}, {'date': '02-Jan-2014', 'users': stateUsers2014},
+                        {'date': '02-Jan-2015', 'users': stateUsers2015}, {'date': '02-Jan-2015', 'users': stateUsers2015},
+                        {'date': '02-Jan-2016', 'users': stateUsers2016}, {'date': '02-Jan-2017', 'users': stateUsers2017}];
+      //could simplify this (maybe using d3.nest?)..
+
+      //sumStateUsers = d3.sum(stateUsersTime, function(d) { return d.users; }); //use for total users in just selected month.
+      var sumStateUsers = stateUsers2017;
+      var sumStateVotes = d3.sum(selectedStateData, function(d) { return d.properties.total_votes; });
+
+  var userPresence = function(d){
+      if (d === 0) { return "There are currently no users in ";
+    } else { return "Explore "; } };
+
+  //append state text
+  stateContainer.append("text")
+      .attr("x", 40)
+      .attr("y", 60)
+      .classed("preHeader", true)
+      .text(userPresence(sumStateUsers))
+    .append("tspan")
+      .style("font-style", "italic")
+      .attr("font-size", "34px")
+      .attr("fill", "#000080")
+      .text(state.properties.name)
+    .append("tspan")
+      .attr("font-size", "12px")
+      .attr("fill", "black")
+      .attr("font-weight", "normal")
+      .text(" (click a county to explore)");
+
+    stateContainer.append("text")
+      .attr("x", 50)
+      .attr("y", 90)
+      .classed("statsText", true)
+      .text(countiesPerState + " counties in "+ state.properties.name + " have registered users.");
+
+    stateContainer.append("text")
+        .attr("x", 50)
+        .attr("y", 110)
+        .classed("statsText", true)
+        .text(sumStateUsers + " registered users have cast " + sumStateVotes + " votes.");
+
+    scatter(stateUsersTime);
+
+  //append county text.
+  g2.selectAll("circle")
+    .on("click", function(d) {
+      d3.select("#tooltip").remove();
+      stateContainer.selectAll("#tooltip").remove();
+
+      stateContainer.selectAll("circle").attr("fill", "green");
+      d3.select(this).attr("fill", "yellow");
+
+      var county = d3.select(this).attr("title");
+      var sumCountyUsers = d.properties.Jan_2017;
+      var sumCountyVotes = d.properties.total_votes;
+      var countyUsersTime = [{'date': '02-Jan-2011', 'users': d.properties.Jan_2011}, {'date': '02-Jan-2012', 'users': d.properties.Jan_2012},
+                        {'date': '02-Jan-2013', 'users': d.properties.Jan_2013}, {'date': '02-Jan-2014', 'users': d.properties.Jan_2014},
+                        {'date': '02-Jan-2015', 'users': d.properties.Jan_2015}, {'date': '02-Jan-2015', 'users': d.properties.Jan_2015},
+                        {'date': '02-Jan-2016', 'users': d.properties.Jan_2016}, {'date': '02-Jan-2017', 'users': d.properties.Jan_2017}];
+console.log(d);
+      stateContainer.append("text")
+          .attr("id", "tooltip")
+          .attr("x", 190)
+          .attr("y", 150)
+          .classed("preHeader", true)
+          .text("Users are in " )
+        .append("tspan")
+          .attr("font-size", "24px")
+          .attr("font-style", "italic")
+          .attr("fill", "#000080")
+          .text(county);
+
+      stateContainer.append("text")
+          .attr("id", "tooltip")
+          .attr("x", 200)
+          .attr("y", 180)
+          .classed("statsText", true)
+          .text(sumCountyUsers + " registered users");
+
+      stateContainer.append("text")
+          .attr("id", "tooltip")
+          .attr("x", 200)
+          .attr("y", 200)
+          .classed("statsText", true)
+          .text(sumCountyVotes + " votes cast");
+
+      //pass county data to create user growth plot.
+      scatter(countyUsersTime);
+
+});
+
+function scatter(usersByTime) {
+
+  scatter_svg.selectAll(".dot").remove();
+  scatter_svg.selectAll("g").remove();
+  d3.select("scatter_svg").remove();
+
+  usersByTime.forEach(function(d) { d.date = new Date(d.date)});
+  xScale.domain(d3.extent(usersByTime, function(d) { return d.date; }));
+  yScale.domain(d3.extent(usersByTime, function(d) { return d.users; }));
+
+  var maxUsers = d3.max(usersByTime, function(d) { return d.users; });
+
+  //Create bubbles for data
+  scatter_svg.selectAll(".dot")
+    .data(usersByTime)
+    .enter()
+  .append("circle")
+    .attr("class", "dot")
+    .attr("fill", "green")
+    .attr("r", 5)
+    .attr("cx", function(d) { return xScale(d.date) + 4; })
+    .attr("cy", function(d) { return yScale(d.users) - 4; });//Pad dots from the axes
+
+  //Create X axis
+  scatter_svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", "translate(0," + (scatter_height - scatter_padding) + ")")
+    .call(xAxis)
+  .append("text")
+    .attr("class", "label")
+    .attr("x", scatter_width - scatter_padding*2)
+    .attr("y", -6)
+    .style("text-anchor", "end")
+    .text("Date");
+
+  //Create Y axis
+  scatter_svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", "translate(" + scatter_padding + ",0)")
+    .call(yAxis)
+  .append("text")
+    .attr("class", "label")
+    .attr("transform", "rotate(-90)")//uncomment for in-line axis label
+    .attr("y", 6)
+    .attr("x", -scatter_padding)
+    .attr("dy", ".71em")
+    .text("# of Users")
+    .style("text-anchor", "end");
+  }
+}
+
+function reset() {
+  active.classed("active", false);
+  active = d3.select(null);
+}
+
+function stopped() {
+  if (d3.event.defaultPrevented) d3.event.stopPropagation();
+}
+
+</script>
+</body>
