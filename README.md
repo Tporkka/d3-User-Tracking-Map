@@ -14,5 +14,4 @@ Binds user data csv with shapefiles to create final us.json. Call from command l
 ##### build
 Includes all shapefiles and user data used in the makefile to create a final topojson file.
 
-#### Created by: Tom Porkka
 ##### Feel free to reuse and make improvements.
